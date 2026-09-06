@@ -98,7 +98,10 @@ void Compute_force(int loc_part, double masses[], vect_t loc_forces[],
 void Update_part(int loc_part, double masses[], vect_t loc_forces[], 
       vect_t loc_pos[], vect_t loc_vel[], int n, int loc_n, double delta_t);
 
-/*--------------------------------------------------------------------*/
+// MY IMP - line 480
+void Update_ring(vect_t pos[], int n, int loc_n);
+
+      /*--------------------------------------------------------------------*/
 int main(int argc, char* argv[]) {
    int n;                      /* Total number of particles  */
    int loc_n;                  /* Number of my particles     */
@@ -474,3 +477,26 @@ void Update_part(int loc_part, double masses[], vect_t loc_forces[],
 }  /* Update_part */
 
 
+/*-------------------------------------------------------
+   Function: Update_ring , defined line 102
+   
+*/
+
+void Update_ring(vect_t pos[], int n, int loc_n) {
+
+   int next = (my_rank + 1) % comm_sz; // send current block here
+   int prev = (my_rank - 1 + comm_sz) % comm_sz; // receive block from this position
+
+   // allocate loc_n number of bufs
+   vect_t* send_buf = (vect_t*)malloc(loc_n * sizeof(vect_t));
+   vect_t* recv_buf = (vect_t*)malloc(loc_n * sizeof(vect_t));
+
+   // loop through the number of processes
+   for (int i = 0; i < comm_sz - 1; i++) {
+
+   }
+
+   // since we are using C for any pointer var, must free them
+   free(send_buf);
+   free(recv_buf);
+}
