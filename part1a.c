@@ -99,7 +99,7 @@ void Update_part(int loc_part, double masses[], vect_t loc_forces[],
       vect_t loc_pos[], vect_t loc_vel[], int n, int loc_n, double delta_t);
 
 // MY IMP - line 480
-void Update_ring(vect_t pos[], int n, int loc_n);
+void Update_ring(vect_t pos[], int loc_n);
 
       /*--------------------------------------------------------------------*/
 int main(int argc, char* argv[]) {
@@ -152,8 +152,7 @@ int main(int argc, char* argv[]) {
       for (loc_part = 0; loc_part < loc_n; loc_part++)
          Update_part(loc_part, masses, loc_forces, loc_pos, loc_vel, 
                n, loc_n, delta_t);
-      MPI_Allgather(MPI_IN_PLACE, loc_n, vect_mpi_t, 
-                    pos, loc_n, vect_mpi_t, comm);
+      Update_ring(pos,loc_n);
 #     ifndef NO_OUTPUT
       if (step % output_freq == 0)
          Output_state(t, masses, pos, loc_vel, n, loc_n);
@@ -482,21 +481,39 @@ void Update_part(int loc_part, double masses[], vect_t loc_forces[],
    
 */
 
-void Update_ring(vect_t pos[], int n, int loc_n) {
+void Update_ring(vect_t pos[], int loc_n) {
 
-   int next = (my_rank + 1) % comm_sz; // send current block here
+   int next = (my_rank + 1) % comm_sz; // send current block here to this rank
    int prev = (my_rank - 1 + comm_sz) % comm_sz; // receive block from this position
 
+   vect_t* loc_pos = pos + my_rank*loc_n; // positions to global pos[] array
+
    // allocate loc_n number of bufs
-   vect_t* send_buf = (vect_t*)malloc(loc_n * sizeof(vect_t));
-   vect_t* recv_buf = (vect_t*)malloc(loc_n * sizeof(vect_t));
+   vect_t* send_buf = (vect_t*)malloc(loc_n * sizeof(vect_t)); // buffer to hold what is being sent
+   vect_t* recv_buf = (vect_t*)malloc(loc_n * sizeof(vect_t)); // buffer to hold what is being received
+
+   memcpy(send_buf, loc_pos, loc_n * sizeof(vect_t)); // before ring starts, send updated positions to send_buf
 
    // loop through the number of processes
    for (int i = 0; i < comm_sz - 1; i++) {
 
+      // combining both send and receive into this method Sendrecv avoids deadlock instead of seperating send and recv: 
+      // we send send_buf to 'next' and recv_buf to 'prev'
+      MPI_Sendrecv(send_buf, loc_n, vect_mpi_t, next, 0, recv_buf, loc_n, vect_mpi_t, prev, 0, comm,MPI_STATUS_IGNORE);
+   
+      int recv_owner = (my_rank - (i+1) + comm_sz) % comm_sz; // get the rank of where recv_buf is last found
+   
+      // TESTING/OBSERVING: ranks receiving blocks and where they are placed
+      printf("Rank %d, stage %d: received block from owner %d, placing at pos [%d..%d]\n",
+            my_rank, i, recv_owner, recv_owner*loc_n, recv_owner*loc_n + loc_n - 1);
+
+      memcpy(pos + recv_owner*loc_n, recv_buf, loc_n * sizeof(vect_t)); // copy memory from recv_buf and place into selected rank in pos[]
+
+      memcpy(send_buf,recv_buf,loc_n*sizeof(vect_t)); // relay received buffer into the next stage
    }
 
    // since we are using C for any pointer var, must free them
    free(send_buf);
    free(recv_buf);
+   free(loc_pos);
 }
