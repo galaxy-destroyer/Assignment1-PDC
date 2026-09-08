@@ -512,8 +512,7 @@ void Update_ring(vect_t pos[], int loc_n) {
       memcpy(send_buf,recv_buf,loc_n*sizeof(vect_t)); // relay received buffer into the next stage
    }
 
-   // since we are using C for any pointer var, must free them
+   // since we are using C for malloc ptr, must free them
    free(send_buf);
    free(recv_buf);
-   free(loc_pos);
 }
