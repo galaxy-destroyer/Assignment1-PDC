@@ -503,9 +503,12 @@ void Update_ring(vect_t pos[], int loc_n) {
    
       int recv_owner = (my_rank - (i+1) + comm_sz) % comm_sz; // get the rank of where recv_buf is last found
    
+      //
+      #ifdef DEBUG
       // TESTING/OBSERVING: ranks receiving blocks and where they are placed
       printf("Rank %d, stage %d: received block from owner %d, placing at pos [%d..%d]\n",
             my_rank, i, recv_owner, recv_owner*loc_n, recv_owner*loc_n + loc_n - 1);
+      #endif
 
       memcpy(pos + recv_owner*loc_n, recv_buf, loc_n * sizeof(vect_t)); // copy memory from recv_buf and place into selected rank in pos[]
 
