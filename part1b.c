@@ -1,4 +1,4 @@
-/* File:     mpi_nbody_basic.c
+/* File:     part1b.c
  * Purpose:  Implement a 2-dimensional n-body solver that uses the 
  *           basic algorithm.  This version uses an in-place Allgather
  *
@@ -101,6 +101,10 @@ void Update_part(int loc_part, double masses[], vect_t loc_forces[],
 // MY IMP - line 480
 void Update_ring(vect_t pos[], int loc_n);
 
+// a temporary block containing masses and positions: representing mass, pos (x,y)
+typedef struct {double mass ; vect_t pos} particle_t;
+MPI_Datatype particle_mpi_t; // think about mpi type create struct
+
       /*--------------------------------------------------------------------*/
 int main(int argc, char* argv[]) {
    int n;                      /* Total number of particles  */
@@ -113,7 +117,7 @@ int main(int argc, char* argv[]) {
    double t;                   /* Current Time               */
    double* masses;             /* All the masses             */
    vect_t* loc_pos;            /* Positions of my particles  */
-   vect_t* pos;                /* Positions of all particles */
+   //vect_t* pos;                /* Positions of all particles */
    vect_t* loc_vel;            /* Velocities of my particles */
    vect_t* loc_forces;         /* Forces on my particles     */
 
@@ -129,10 +133,10 @@ int main(int argc, char* argv[]) {
    loc_n = n/comm_sz;  /* n should be evenly divisible by comm_sz */
 
    // change this concept of having size n arrays to loc_n size
-   masses = malloc(n*sizeof(double));
-   pos = malloc(n*sizeof(vect_t));
+   masses = malloc(loc_n*sizeof(double));
+   loc_pos = malloc(loc_n*sizeof(size_t));
+
    loc_forces = malloc(loc_n*sizeof(vect_t));
-   loc_pos = pos + my_rank*loc_n;
    loc_vel = malloc(loc_n*sizeof(vect_t));
    if (my_rank == 0) vel = malloc(n*sizeof(vect_t));
    MPI_Type_contiguous(DIM, MPI_DOUBLE, &vect_mpi_t);

@@ -1,4 +1,4 @@
-/* File:     mpi_nbody_basic.c
+/* File:     part1a.c
  * Purpose:  Implement a 2-dimensional n-body solver that uses the 
  *           basic algorithm.  This version uses an in-place Allgather
  *
