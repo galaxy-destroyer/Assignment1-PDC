@@ -87,9 +87,9 @@ vect_t *vel = NULL;
 void Usage(char* prog_name);
 void Get_args(int argc, char* argv[], int* n_p, int* n_steps_p, 
       double* delta_t_p, int* output_freq_p, char* g_i_p);
-void Get_init_cond(double masses[], vect_t pos[], 
+void Get_init_cond(double loc_masses[], vect_t loc_pos[], 
       vect_t loc_vel[], int n, int loc_n);
-void Gen_init_cond(double masses[], vect_t pos[], 
+void Gen_init_cond(double loc_masses[], vect_t loc_pos[], 
       vect_t loc_vel[], int n, int loc_n);
 void Output_state(double time, double masses[], vect_t pos[],
       vect_t loc_vel[], int n, int loc_n);
@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
    int output_freq;            /* Frequency of output        */
    double delta_t;             /* Size of timestep           */
    double t;                   /* Current Time               */
-   double* masses;             /* All the masses             */
+   double* loc_masses;             /* All the masses             */
    vect_t* loc_pos;            /* Positions of my particles  */
    //vect_t* pos;                /* Positions of all particles */
    vect_t* loc_vel;            /* Velocities of my particles */
@@ -133,35 +133,36 @@ int main(int argc, char* argv[]) {
    loc_n = n/comm_sz;  /* n should be evenly divisible by comm_sz */
 
    // change this concept of having size n arrays to loc_n size
-   masses = malloc(loc_n*sizeof(double));
-   loc_pos = malloc(loc_n*sizeof(size_t));
+   loc_masses = malloc(loc_n*sizeof(double));
+   loc_pos = malloc(loc_n*sizeof(vect_t));
 
    loc_forces = malloc(loc_n*sizeof(vect_t));
    loc_vel = malloc(loc_n*sizeof(vect_t));
+
    if (my_rank == 0) vel = malloc(n*sizeof(vect_t));
    MPI_Type_contiguous(DIM, MPI_DOUBLE, &vect_mpi_t);
    MPI_Type_commit(&vect_mpi_t);
 
    if (g_i == 'i')
-      Get_init_cond(masses, pos, loc_vel, n, loc_n);
+      Get_init_cond(loc_masses, loc_pos, loc_vel, n, loc_n);
    else
-      Gen_init_cond(masses, pos, loc_vel, n, loc_n);
+      Gen_init_cond(loc_masses, loc_pos, loc_vel, n, loc_n);
 
    start = MPI_Wtime();
 #  ifndef NO_OUTPUT
-   Output_state(0.0, masses, pos, loc_vel, n, loc_n);
+   Output_state(0.0, loc_masses, loc_pos, loc_vel, n, loc_n);
 #  endif
    for (step = 1; step <= n_steps; step++) {
       t = step*delta_t;
       for (loc_part = 0; loc_part < loc_n; loc_part++)
-         Compute_force(loc_part, masses, loc_forces, pos, n, loc_n);
+         Compute_force(loc_part, loc_masses, loc_forces, loc_pos, n, loc_n);
       for (loc_part = 0; loc_part < loc_n; loc_part++)
-         Update_part(loc_part, masses, loc_forces, loc_pos, loc_vel, 
+         Update_part(loc_part, loc_masses, loc_forces, loc_pos, loc_vel, 
                n, loc_n, delta_t);
-      Update_ring(pos,loc_n);
+      Update_ring(loc_pos,loc_n);
 #     ifndef NO_OUTPUT
       if (step % output_freq == 0)
-         Output_state(t, masses, pos, loc_vel, n, loc_n);
+         Output_state(t, loc_masses, loc_pos, loc_vel, n, loc_n);
 #     endif
    }
    
@@ -170,8 +171,8 @@ int main(int argc, char* argv[]) {
       printf("Elapsed time = %e seconds\n", finish-start);
 
    MPI_Type_free(&vect_mpi_t);
-   free(masses);
-   free(pos);
+   free(loc_masses);
+   free(loc_pos);
    free(loc_forces);
    free(loc_vel);
    if (my_rank == 0) free(vel);
@@ -411,6 +412,9 @@ void Compute_force(int loc_part, double masses[], vect_t loc_forces[],
          my_rank, part, loc_forces[loc_part][X], 
          loc_forces[loc_part][Y]);
 #  endif
+
+    for (int i = 0; i < loc_n; i++)
+
    for (k = 0; k < n; k++) {
       if (k != part) {
          /* Compute force on part due to k */
@@ -453,14 +457,13 @@ void Compute_force(int loc_part, double masses[], vect_t loc_forces[],
  * Note:  This version uses Euler's method to update both the velocity
  *    and the position.
  */
-void Update_part(int loc_part, double masses[], vect_t loc_forces[], 
+void Update_part(int loc_part, double loc_masses[], vect_t loc_forces[], 
       vect_t loc_pos[], vect_t loc_vel[], int n, int loc_n, 
       double delta_t) {
    int part;
    double fact;
 
-   part = my_rank*loc_n + loc_part;
-   fact = delta_t/masses[part];
+   fact = delta_t / loc_masses[loc_part];
 #  ifdef DEBUG
    printf("Proc %d > Before update of %d:\n", my_rank, part);
    printf("   Position  = (%.3e, %.3e)\n", 
@@ -492,11 +495,12 @@ void Update_ring(vect_t pos[], int loc_n) {
    int next = (my_rank + 1) % comm_sz; // send current block here to this rank
    int prev = (my_rank - 1 + comm_sz) % comm_sz; // receive block from this position
 
+   vect_t* loc_masses;
    vect_t* loc_pos = pos + my_rank*loc_n; // positions to global pos[] array
 
    // allocate loc_n number of bufs
-   vect_t* send_buf = (vect_t*)malloc(loc_n * sizeof(vect_t)); // buffer to hold what is being sent
-   vect_t* recv_buf = (vect_t*)malloc(loc_n * sizeof(vect_t)); // buffer to hold what is being received
+   particle_t* send_buf = (vect_t*)malloc(loc_n * sizeof(vect_t)); // buffer to hold what is being sent
+   particle_t* recv_buf = (vect_t*)malloc(loc_n * sizeof(vect_t)); // buffer to hold what is being received
 
    memcpy(send_buf, loc_pos, loc_n * sizeof(vect_t)); // before ring starts, send updated positions to send_buf
 
