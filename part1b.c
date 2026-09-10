@@ -91,7 +91,7 @@ void Get_init_cond(double loc_masses[], vect_t loc_pos[],
       vect_t loc_vel[], int n, int loc_n);
 void Gen_init_cond(double loc_masses[], vect_t loc_pos[], 
       vect_t loc_vel[], int n, int loc_n);
-void Output_state(double time, double masses[], vect_t pos[],
+void Output_state(double time, double loc_masses[], vect_t loc_pos[],
       vect_t loc_vel[], int n, int loc_n);
 void Compute_force(int loc_part, double loc_masses[], vect_t loc_forces[], 
       vect_t loc_pos[], double remote_block[], int block_size, int same_block);
@@ -102,7 +102,7 @@ void Update_part(int loc_part, double loc_masses[], vect_t loc_forces[],
 void Update_ring(double loc_masses[], vect_t loc_pos[], vect_t loc_forces[], int loc_n);
 
 // a temporary block containing masses and positions: representing mass, pos (x,y)
-typedef struct {double mass ; vect_t pos} particle_t;
+typedef struct {double mass ; vect_t pos;} particle_t;
 MPI_Datatype particle_mpi_t; // think about mpi type create struct
 
       /*--------------------------------------------------------------------*/
@@ -113,11 +113,12 @@ int main(int argc, char* argv[]) {
    int step;                   /* Current step               */
    int loc_part;               /* Current local particle     */
    int output_freq;            /* Frequency of output        */
+
    double delta_t;             /* Size of timestep           */
    double t;                   /* Current Time               */
+
    double* loc_masses;             /* All the masses             */
    vect_t* loc_pos;            /* Positions of my particles  */
-   //vect_t* pos;                /* Positions of all particles */
    vect_t* loc_vel;            /* Velocities of my particles */
    vect_t* loc_forces;         /* Forces on my particles     */
 
@@ -132,17 +133,18 @@ int main(int argc, char* argv[]) {
    Get_args(argc, argv, &n, &n_steps, &delta_t, &output_freq, &g_i);
    loc_n = n/comm_sz;  /* n should be evenly divisible by comm_sz */
 
-   // change this concept of having size n arrays to loc_n size
+   // local arrays
    loc_masses = malloc(loc_n*sizeof(double));
    loc_pos = malloc(loc_n*sizeof(vect_t));
-
    loc_forces = malloc(loc_n*sizeof(vect_t));
    loc_vel = malloc(loc_n*sizeof(vect_t));
 
    if (my_rank == 0) vel = malloc(n*sizeof(vect_t));
+
    MPI_Type_contiguous(DIM, MPI_DOUBLE, &vect_mpi_t);
    MPI_Type_commit(&vect_mpi_t);
 
+   // initial conditions
    if (g_i == 'i')
       Get_init_cond(loc_masses, loc_pos, loc_vel, n, loc_n);
    else
@@ -154,14 +156,23 @@ int main(int argc, char* argv[]) {
    Output_state(0.0, loc_masses, loc_pos, loc_vel, n, loc_n);
 #  endif
 
+// simulation
    for (step = 1; step <= n_steps; step++) {
+
       t = step*delta_t;
-      for (loc_part = 0; loc_part < loc_n; loc_part++)
-         Compute_force(loc_part, loc_masses, loc_forces, loc_pos, n, loc_n);
-      for (loc_part = 0; loc_part < loc_n; loc_part++)
-         Update_part(loc_part, loc_masses, loc_forces, loc_pos, loc_vel, 
-               n, loc_n, delta_t);
-      Update_ring(loc_pos,loc_n);
+
+      for (loc_part = 0; loc_part < loc_n; loc_part++) {
+         loc_forces[loc_part][X] = 0.0;
+         loc_forces[loc_part][Y] = 0.0;
+      }
+
+      // Update ring before particles because forces are now calculated here
+      Update_ring(loc_masses,loc_pos,loc_forces,loc_n);
+
+      for (loc_part = 0; loc_part < loc_n; loc_part++) {
+         Update_part(loc_part,loc_masses,loc_forces,loc_pos,loc_vel,delta_t);
+      }
+
 #     ifndef NO_OUTPUT
       if (step % output_freq == 0)
          Output_state(t, loc_masses, loc_pos, loc_vel, n, loc_n);
@@ -282,7 +293,7 @@ void Get_init_cond(double loc_masses[], vect_t loc_pos[], vect_t loc_vel[], int 
 
    if (my_rank == 0) {
 
-    masses = malloc(n*sizeof(vect_t));
+    masses = malloc(n*sizeof(double));
     pos = malloc(n*sizeof(vect_t));
 
 
@@ -341,7 +352,7 @@ void Gen_init_cond(double loc_masses[], vect_t loc_pos[], vect_t loc_vel[], int 
    if (my_rank == 0) {
 
    // create temporary blocks to later send across to different processes
-    masses = malloc(n*sizeof(vect_t));
+    masses = malloc(n*sizeof(double));
     pos = malloc(n*sizeof(vect_t));
 
 //    srandom(1);
@@ -377,23 +388,32 @@ void Gen_init_cond(double loc_masses[], vect_t loc_pos[], vect_t loc_vel[], int 
  *    n:       total number of particles
  *    loc_n:   number of my particles
  */
-void Output_state(double time, double masses[], vect_t pos[],
-      vect_t loc_vel[], int n, int loc_n) {
+void Output_state(double time, double loc_masses[], vect_t loc_pos[], vect_t loc_vel[], int n, int loc_n) {
+   
    int part;
+   vect_t* all_pos = NULL; // since we dont have a global pos[] array to show final positions, create this
 
-   MPI_Gather(loc_vel, loc_n, vect_mpi_t, vel, loc_n, vect_mpi_t, 
-         0, comm);
+   if (my_rank == 0) {
+      all_pos = malloc(n*sizeof(vect_t));
+   }
+
+   MPI_Gather(loc_pos, loc_n, vect_mpi_t, all_pos, loc_n, vect_mpi_t, 0, comm);
+   MPI_Gather(loc_vel, loc_n, vect_mpi_t, vel, loc_n, vect_mpi_t, 0, comm);
+      
+
    if (my_rank == 0) {
       printf("%.2f\n", time);
       for (part = 0; part < n; part++) {
 //       printf("%.3f ", masses[part]);
-         printf("%3d %10.3e ", part, pos[part][X]);
-         printf("  %10.3e ", pos[part][Y]);
+         printf("%3d %10.3e ", part, all_pos[part][X]);
+         printf("  %10.3e ", all_pos[part][Y]);
          printf("  %10.3e ", vel[part][X]);
          printf("  %10.3e\n", vel[part][Y]);
       }
       printf("\n");
    }
+
+   free(all_pos);
 }  /* Output_state */
 
 
@@ -574,7 +594,7 @@ void Update_ring(double loc_masses[], vect_t loc_pos[], vect_t loc_forces[], int
 
       // calculate force from this block
       for (int j = 0; j < loc_n; j++) {
-         Compute_force(i, loc_masses, loc_forces, loc_pos, recv_buf, loc_n, 0); // recv_buf is where blocks go to
+         Compute_force(j, loc_masses, loc_forces, loc_pos, recv_buf, loc_n, 0); // recv_buf is where blocks go to
       }
 
       memcpy(send_buf,recv_buf,3*loc_n*sizeof(double));
