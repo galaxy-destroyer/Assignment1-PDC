@@ -101,9 +101,8 @@ void Update_part(int loc_part, double loc_masses[], vect_t loc_forces[],
 // MY IMP - line 480
 void Update_ring(double loc_masses[], vect_t loc_pos[], vect_t loc_forces[], int loc_n);
 
-// a temporary block containing masses and positions: representing mass, pos (x,y)
-typedef struct {double mass ; vect_t pos;} particle_t;
-MPI_Datatype particle_mpi_t; // think about mpi type create struct
+
+
 
       /*--------------------------------------------------------------------*/
 int main(int argc, char* argv[]) {
@@ -452,7 +451,7 @@ void Compute_force(int loc_part, double loc_masses[], vect_t loc_forces[],
 
    #  ifdef DEBUG
    printf("Proc %d > Current total force on part %d = (%.3e, %.3e)\n",
-         my_rank, part, loc_forces[loc_part][X], 
+         my_rank, loc_part, loc_forces[loc_part][X], 
          loc_forces[loc_part][Y]);
 #  endif
 
@@ -462,6 +461,7 @@ void Compute_force(int loc_part, double loc_masses[], vect_t loc_forces[],
             continue; // dont calculate force of particle on itself
          }
 
+         // index = 3*k is MASS 
          remote_index = 3*k; // one block
 
          // compute force
@@ -510,7 +510,7 @@ void Update_part(int loc_part, double loc_masses[], vect_t loc_forces[], vect_t 
    fact = delta_t / loc_masses[loc_part];
 
 #  ifdef DEBUG
-   printf("Proc %d > Before update of %d:\n", my_rank, part);
+   printf("Proc %d > Before update of %d:\n", my_rank, loc_part);
    printf("   Position  = (%.3e, %.3e)\n", 
          loc_pos[loc_part][X], loc_pos[loc_part][Y]);
    printf("   Velocity  = (%.3e, %.3e)\n", 
@@ -594,6 +594,7 @@ void Update_ring(double loc_masses[], vect_t loc_pos[], vect_t loc_forces[], int
 
       // calculate force from this block
       for (int j = 0; j < loc_n; j++) {
+         // every block received via ring is from a different rank, no need to check for self-interaction at this stage
          Compute_force(j, loc_masses, loc_forces, loc_pos, recv_buf, loc_n, 0); // recv_buf is where blocks go to
       }
 
