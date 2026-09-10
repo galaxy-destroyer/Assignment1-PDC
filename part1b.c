@@ -561,7 +561,7 @@ void Update_ring(double loc_masses[], vect_t loc_pos[], vect_t loc_forces[], int
       for (int k = 0; k < loc_n; k++) {
 
          if (j == k) {
-            continue;
+            continue; // avoid self interaction between particles
          }
 
          vect_t displacement;
